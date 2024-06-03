@@ -5,15 +5,10 @@ library(MASS)
 library(pwr)
 
 # Set parameters
-T <- 210  # Total number of decision points (42 days * 5 times per day)
+Time <- 210  # Total number of decision points (42 days * 5 times per day)
 rho <- 0.4  # Randomization probability
 availability <- 0.5  # Constant availability
 
-# Standardized Proximal Main Effect (assuming a quadratic form)
-Z <- matrix(0, nrow = T, ncol = 3)
-for (t in 1:T) {
-  Z[t,] <- c(1, floor((t-1)/5), floor((t-1)/5)^2)
-}
 
 
 create_z <- function(t) {
@@ -22,76 +17,71 @@ create_z <- function(t) {
   return(Z)
 }
 
-#calculate matrix Q
-Q <- matrix(0, nrow = 3, ncol = 3)
-for (i in 1:T) {
-  Z_t <- create_z(i)
-  Q <- Q + (Z_t) %*% t(Z_t) * availability * rho * (1 - rho)
+#calculate matrix Z and Q
+Z <- matrix(0, nrow = Time, ncol = 3)
+for (t in 1:Time) {
+  Z[t,] <- c(1, floor((t-1)/5), floor((t-1)/5)^2)
 }
+Q <- t(Z) %*% diag(rep(availability,Time) * rep(rho, Time) * rep((1-rho), Time)) %*% Z
 
 # Standardized treatment effect (d)
 d <- c(0, 0.00964, -0.000172)
+# d <- c(0, 0.01, -0.0002)
+# beta_t <- matrix(rep(0.1, 210), ncol = 1)
+# d <- solve(t(Z) %*% diag(rep(availability,Time)) %*% Z) %*% t(Z)  %*% diag(rep(availability,Time)) %*% beta_t
+
+# Verify the max effect day
+effect_by_day <- c()
+for (i in 1:(Time/5)) {
+  effect_by_day <- c(effect_by_day, t(create_z(i*5)) %*% d)
+}
+print(paste0("Maximum effect: ", which.max(effect_by_day)))
 
 # Verify the d_bar
-d_bar <- 0
-for (i in 1:T) {
-  d_bar <- d_bar + t(create_z(i)) %*% d / T
+d_t <- numeric(0)
+for (i in 1:Time) {
+  d_t <- c(d_t, t(create_z(i)) %*% d)
 }
-print(d_bar)
+print(paste0("d bar: ", sum(d_t)/ Time))
+
+plot(1:length(d_t), d_t)
 
 # Function to calculate sample size for given power and alpha
-calculate_sample_size <- function(power, alpha, d_bar, Q) {
+calculate_sample_size <- function(beta, alpha, d_bar, Q) {
   p <- 3
   q <- 3
   # Calculate power function for given N
   power_function <- function(N) {
     
     #calculate the noncentraility parameter
-    c_N <- N * (t(d) %*% Q %*% d)
-    print(N)
+    c_N <- N * t(d) %*% Q %*% d
     df1 <- p
     df2 <- N - q - p
     
     # Calculate the critical value for the F-distribution
-    F_critical <- qf((N - q - p) * (1 - alpha) / (p * (N - q - 1)), df1 = df1, df2 = df2, ncp = 0)
+    inv.f <- qf(1-alpha,df1,df2)
     
     # Evaluate the left-hand side of the formula
-    projected_power <- (p * (N - q - 1) / (N - q - p)) * pf(F_critical, df1 = df1, df2 = df2, ncp = c_N)
-    return(projected_power)
+    calc_power = 1-pf(inv.f,df1,df2,ncp = c_N)
+    #print(paste0("Sample size: ", N, ", power: ", calc_power))
+    return(calc_power - 0.8)
   }
   
-  beta.0 <- power
-  max.iters = 10000
-  N = 100
-  i = 1
-  
-  while (i < max.iters ) {
-    if ( power_function(N) < 1- beta.0) {
-      if (power_function(N-1) > 1 - beta.0) {
-        break
-      } else {N = N - 1}
-    } else if (power_function(N) > 1 - beta.0) {
-      N = N+1
-    } else if (power_function(N) == 1 - beta.0) {break}
-    i = i+1
-  }
-  
-  return(N)
-  
-  # # Debugging: Print values at interval endpoints
+  # Debugging: Print values at interval endpoints
   # print(paste("Value at N=10:", power_function(10)))
-  # print(paste("Value at N=1000:", power_function(50)))
-  # 
-  # # Calculate sample size for given power
-  # result <- uniroot(power_function, interval = c(10, 50))
-  # 
-  # return(ceiling(result$root))
+  # print(paste("Value at N=100:", power_function(1000)))
+  
+  # Calculate sample size for given power
+  result <- uniroot(power_function, interval = c(10, 1000))
+  
+
+  return(ceiling(result$root))
 }
 
 # Desired power and significance level
-desired_power <- 0.2
+beta <- 0.8
 alpha <- 0.05
 
 # Calculate sample size
-sample_size <- calculate_sample_size(desired_power, alpha, d, Q)
+sample_size <- calculate_sample_size(beta, alpha, d, Q)
  print(paste("Required sample size: ", sample_size))
