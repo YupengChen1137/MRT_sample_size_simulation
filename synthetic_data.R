@@ -26,25 +26,24 @@ source("estimate.R")
 # 
 # var_sample <- var(average_avail$avail)
 # var_bernoulli <- mean(average_avail$avail) * (1 - mean(average_avail$avail)) / 37
-
-generate_synthetic_data <- function(N, T = 210, p = 0.4) {
+generate_synthetic_header <- function(N, T = 210, p = 0.4) {
   data <- data.frame(
     userid = rep(1:N, each = T),
     decision.index.nogap = rep(1:T, times = N),
     study.day.nogap = rep(rep(0:((T/5)-1), rep(5, (T/5))), times = N),
+    study.day.square = rep(rep((0:((T/5)-1))**2, rep(5, (T/5))), times = N),
     avail = rbinom(N * T, 1, 0.5)
   )
   
   data$send <- with(data, ifelse(avail == 1, rbinom(N * T, 1, p), 0))
-  
   # Model parameters
-  alpha <- c(2.5, 0.01, 0.01)  # Example values for B_t coefficients
-  beta <- c(0.1, 0, 0) # Example values for Z_t coefficients
+  alpha <- c(2.5, 0.01, 0.005) # Example values for B_t coefficients
+  beta <- c(0, 0.00964, -0.000172) # Example values for Z_t coefficients
   B_t <- function(t) c(1, floor((t-1)/5), floor((t-1)/5)^2)
   Z_t <- function(t) c(1, floor((t-1)/5), floor((t-1)/5)^2)
   
   # Generate steps
-  data$steps <- 0
+  data$steps <- numeric(N*T)
   for (i in 1:N) {
     for (t in 1:T) {
       idx <- (i - 1) * T + t
@@ -58,11 +57,13 @@ generate_synthetic_data <- function(N, T = 210, p = 0.4) {
 }
 
 # Example usage
+p_values_2 <- numeric(0)
+p_values_1 <- numeric(0)
 p_values <- numeric(0)
-for (i in 1:100) {
+for (i in 1:200) {
   print(i)
   set.seed(i+1001)
-  synthetic_data <- generate_synthetic_data(N = 34)
+  synthetic_data <- generate_synthetic_header(N = 43, T = 210)
   head(synthetic_data)
   
   synthetic_data$"(Intercept)" <- 1
@@ -71,11 +72,13 @@ for (i in 1:100) {
   xmat <- synthetic_data %>%
     transmute("(Intercept)" = .$"(Intercept)",
               "days" = .$"study.day.nogap",
-              "points" = .$"decision.index.nogap",
+              "days_sq" = .$"study.day.square",
               "I(send - 0.4)" = .$"I(send - 0.4)")
   
-  fit_model1 <- geese.glm(x = as.matrix(xmat),
+  fit_model2 <- geese.glm(x = as.matrix(xmat),
                           y = synthetic_data$steps, w = synthetic_data$avail, id = as.factor(synthetic_data$userid),
                           family = gaussian(), corstr = "independence")
-  p_values <- c(p_values, estimate(fit_model1)[4,8])
+  p_values_2 <- c(p_values_2, estimate(fit_model2)[4,8])
 }
+
+
