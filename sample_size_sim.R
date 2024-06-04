@@ -1,3 +1,8 @@
+# Continuous Outcome MRT sample size calculator
+# From Liao et al 2016
+
+rm(list = ls())
+
 # Load necessary libraries
 library(dplyr)
 library(ggplot2)
