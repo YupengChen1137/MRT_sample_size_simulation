@@ -73,9 +73,9 @@ for (i in 1:500) {
   print(i)
   set.seed(i+1001)
   
-  sample_size <- 34
+  sample_size <- 67
   synthetic_data <- generate_synthetic_data(N = sample_size, T = 50)
-  synthetic_data$Y <- as.integer(synthetic_data$steps > 2)
+  synthetic_data$logY <- rbinom(n = length(synthetic_data$userid), size = 1, prob = 1/(1+exp(-0.2*synthetic_data$send)))
   synthetic_data$prob_A <- 0.4
   
   fit_wcls <- weighted_centered_least_square(
@@ -83,13 +83,13 @@ for (i in 1:500) {
     id_varname = "userid",
     decision_time_varname = "decision.index.nogap",
     treatment_varname = "send",
-    outcome_varname = "Y",
+    outcome_varname = "logY",
     control_varname = NULL,
     moderator_varname = NULL,
     avail_varname = "avail",
     rand_prob_varname = "prob_A",
     rand_prob_tilde_varname = NULL,
-    rand_prob_tilde = 0.4,
+    rand_prob_tilde = 0.5,
     estimator_initial_value = NULL
   )
   p_value <- 2 * pt(abs(fit_wcls$beta_hat) / fit_wcls$beta_se_adjusted, sample_size - 1, lower.tail = FALSE)
