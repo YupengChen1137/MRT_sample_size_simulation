@@ -9,36 +9,23 @@ library(geepack)
 library(ggplot2)
 source("xgeepack.R")
 source("estimate.R")
-# # Read the data into a data frame
-# s_data <- data.frame(read_csv("synthetic_data_37subject_210time.csv"))
-# 
-# # Calculate the average availability for each time point
-# average_avail <- aggregate(avail ~ decision.index.nogap, data = s_data, mean)
-# 
-# # Plot the average availability for each time point
-# ggplot(average_avail, aes(x = decision.index.nogap, y = avail)) +
-#   geom_line() +
-#   geom_point() +
-#   labs(title = "Average Availability Over Time",
-#        x = "Time Point (decision.index.nogap)",
-#        y = "Average Availability") +
-#   theme_minimal()
-# 
-# var_sample <- var(average_avail$avail)
-# var_bernoulli <- mean(average_avail$avail) * (1 - mean(average_avail$avail)) / 37
-generate_synthetic_header <- function(N, T = 210, p = 0.4) {
+source("estimators.R")
+
+
+generate_synthetic_data <- function(N, T = 210, p = 0.4) {
   data <- data.frame(
     userid = rep(1:N, each = T),
     decision.index.nogap = rep(1:T, times = N),
     study.day.nogap = rep(rep(0:((T/5)-1), rep(5, (T/5))), times = N),
     study.day.square = rep(rep((0:((T/5)-1))**2, rep(5, (T/5))), times = N),
-    avail = rbinom(N * T, 1, 0.5)
+    avail = rbinom(N * T, 1, 1)
   )
   
   data$send <- with(data, ifelse(avail == 1, rbinom(N * T, 1, p), 0))
   # Model parameters
-  alpha <- c(2.5, 0.01, 0.005) # Example values for B_t coefficients
-  beta <- c(0, 0.00964, -0.000172) # Example values for Z_t coefficients
+  alpha <- c(2, 0.01, 0.01) # Example values for B_t coefficients
+  alpha <- c(2, 0, 0)
+  beta <- c(0.2, 0, 0) # Example values for Z_t coefficients
   B_t <- function(t) c(1, floor((t-1)/5), floor((t-1)/5)^2)
   Z_t <- function(t) c(1, floor((t-1)/5), floor((t-1)/5)^2)
   
@@ -56,14 +43,12 @@ generate_synthetic_header <- function(N, T = 210, p = 0.4) {
   return(data)
 }
 
-# Example usage
-p_values_2 <- numeric(0)
-p_values_1 <- numeric(0)
+# continuous outcome estimator
 p_values <- numeric(0)
 for (i in 1:200) {
   print(i)
   set.seed(i+1001)
-  synthetic_data <- generate_synthetic_header(N = 43, T = 210)
+  synthetic_data <- generate_synthetic_data(N = 43, T = 210)
   head(synthetic_data)
   
   synthetic_data$"(Intercept)" <- 1
@@ -75,10 +60,38 @@ for (i in 1:200) {
               "days_sq" = .$"study.day.square",
               "I(send - 0.4)" = .$"I(send - 0.4)")
   
-  fit_model2 <- geese.glm(x = as.matrix(xmat),
+  fit_model1 <- geese.glm(x = as.matrix(xmat),
                           y = synthetic_data$steps, w = synthetic_data$avail, id = as.factor(synthetic_data$userid),
                           family = gaussian(), corstr = "independence")
-  p_values_2 <- c(p_values_2, estimate(fit_model2)[4,8])
+  p_values <- c(p_values, estimate(fit_model1)[4,8])
 }
 
 
+# binary outcome estimator
+p_values_2 <- numeric(0)
+for (i in 1:500) {
+  print(i)
+  set.seed(i+1001)
+  
+  sample_size <- 34
+  synthetic_data <- generate_synthetic_data(N = sample_size, T = 50)
+  synthetic_data$Y <- as.integer(synthetic_data$steps > 2)
+  synthetic_data$prob_A <- 0.4
+  
+  fit_wcls <- weighted_centered_least_square(
+    dta = synthetic_data,
+    id_varname = "userid",
+    decision_time_varname = "decision.index.nogap",
+    treatment_varname = "send",
+    outcome_varname = "Y",
+    control_varname = NULL,
+    moderator_varname = NULL,
+    avail_varname = "avail",
+    rand_prob_varname = "prob_A",
+    rand_prob_tilde_varname = NULL,
+    rand_prob_tilde = 0.4,
+    estimator_initial_value = NULL
+  )
+  p_value <- 2 * pt(abs(fit_wcls$beta_hat) / fit_wcls$beta_se_adjusted, sample_size - 1, lower.tail = FALSE)
+  p_values_2 <- c(p_values_2, p_value)
+}

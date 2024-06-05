@@ -52,7 +52,7 @@ print(paste0("d bar: ", sum(d_t)/ Time))
 plot(1:length(d_t), d_t)
 
 # Function to calculate sample size for given power and alpha
-calculate_sample_size <- function(beta, alpha, d_bar, Q) {
+calculate_sample_size <- function(beta, alpha, d, Q) {
   p <- 3
   q <- 3
   # Calculate power function for given N
@@ -65,16 +65,18 @@ calculate_sample_size <- function(beta, alpha, d_bar, Q) {
     
     # Calculate the critical value for the F-distribution
     inv.f <- qf(1-alpha,df1,df2)
-    
+    inv.f <- qf((N-p-q) *(1-alpha) / p / (N-q-1),df1,df2)
     # Evaluate the left-hand side of the formula
     calc_power = 1-pf(inv.f,df1,df2,ncp = c_N)
+    calc_power = 1 - p * (N-q-1) * pf(inv.f,df1,df2,ncp = c_N) / (N-p-q)
+    #calc_power = 1 - pf( p * (N-q-1) * inv.f / (N-p-q),df1,df2,ncp = c_N)
     #print(paste0("Sample size: ", N, ", power: ", calc_power))
     return(calc_power - 0.8)
   }
   
   # Debugging: Print values at interval endpoints
-  # print(paste("Value at N=10:", power_function(10)))
-  # print(paste("Value at N=100:", power_function(1000)))
+  print(paste("Value at N=10:", power_function(10)))
+  print(paste("Value at N=100:", power_function(1000)))
   
   # Calculate sample size for given power
   result <- uniroot(power_function, interval = c(10, 1000))
