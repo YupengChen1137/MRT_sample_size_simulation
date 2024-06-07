@@ -13,16 +13,16 @@ source("estimate.R")
 source("estimators.R")
 
 
-generate_synthetic_data <- function(N, T = 210, p = 0.4) {
+generate_synthetic_data <- function(N, Time = 210, p = 0.4) {
   data <- data.frame(
-    userid = rep(1:N, each = T),
-    decision.index.nogap = rep(1:T, times = N),
-    study.day.nogap = rep(rep(0:((T/5)-1), rep(5, (T/5))), times = N),
-    study.day.square = rep(rep((0:((T/5)-1))**2, rep(5, (T/5))), times = N),
-    avail = rbinom(N * T, 1, 1)
+    userid = rep(1:N, each = Time),
+    decision.index.nogap = rep(1:Time, times = N),
+    study.day.nogap = rep(rep(0:((Time/5)-1), rep(5, (Time/5))), times = N),
+    study.day.square = rep(rep((0:((Time/5)-1))**2, rep(5, (Time/5))), times = N),
+    avail = rbinom(N * Time, 1, 1)
   )
   
-  data$send <- with(data, ifelse(avail == 1, rbinom(N * T, 1, p), 0))
+  data$send <- with(data, ifelse(avail == 1, rbinom(N * Time, 1, p), 0))
   # Model parameters
   alpha <- c(2, 0.01, 0.01) # Example values for B_t coefficients
   #alpha <- c(2, 0, 0)
@@ -32,10 +32,10 @@ generate_synthetic_data <- function(N, T = 210, p = 0.4) {
   Z_t <- function(t) c(1, floor((t-1)/5), floor((t-1)/5)^2)
   
   # Generate steps
-  data$steps <- numeric(N*T)
+  data$steps <- numeric(N*Time)
   for (i in 1:N) {
-    for (t in 1:T) {
-      idx <- (i - 1) * T + t
+    for (t in 1:Time) {
+      idx <- (i - 1) * Time + t
       B <- B_t(t)
       Z <- Z_t(t)
       data$steps[idx] <- sum(B * alpha) + sum(Z * beta) * (data$send[idx] - p) + rnorm(1, 0, 1)
@@ -63,7 +63,7 @@ for (t in 1:Time) {
 }
 Q <- t(Z) %*% diag(rep(availability,Time) * rep(rho, Time) * rep((1-rho), Time)) %*% Z
 
-trial <- 100
+trial <- 200
 test_stats <- numeric(0)
 for (i in 1:trial) {
   print(i)
@@ -77,6 +77,7 @@ for (i in 1:trial) {
   xmat <- synthetic_data %>%
     transmute("(Intercept)" = .$"(Intercept)",
               "days" = .$"study.day.nogap",
+              "days.square" = .$"study.day.square",
               "I(send - 0.4)" = .$"I(send - 0.4)",
               "I(send - 0.4):study.day.nogap" = .$"I(send - 0.4)" * .$"study.day.nogap",
               "I(send - 0.4):study.day.square" = .$"I(send - 0.4)" * .$"study.day.square")
@@ -85,15 +86,15 @@ for (i in 1:trial) {
                           y = synthetic_data$steps, w = synthetic_data$avail, id = as.factor(synthetic_data$userid),
                           family = gaussian(), corstr = "independence")
   # alpha_hat <- estimate(fit_model1)[1:3,1]
-  beta_hat <- estimate(fit_model1)[3:5,1]
+  beta_hat <- fit_model1$coefficients[4:6]
   
   
   W_sum <- matrix(0,3,3)
   for (i in 1:N) {
     summation_term <- numeric(3)
     for (t in 1:Time) {
-      idx <- (i - 1) * T + t
-      summation_term <- summation_term + sum(fit_model1$residuals[idx] * synthetic_data$avail[idx] * (synthetic_data$send[idx] - rho)) * Z[t,]
+      idx <- (i - 1) * Time + t
+      summation_term <- summation_term + fit_model1$residuals[idx] * synthetic_data$avail[idx] * (synthetic_data$send[idx] - rho) * Z[t,]
     }
     W_sum <- W_sum + summation_term %*% t(summation_term)
   }
